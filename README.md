@@ -48,3 +48,7 @@ The screenshots above are rendered with `--demo`, so they contain no real sessio
 ## Privacy
 
 The app only reads local files and runs `ps`. It makes no network requests and writes nothing outside its own window.
+
+## License
+
+[MIT](LICENSE)
