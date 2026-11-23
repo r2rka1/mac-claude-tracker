@@ -29,7 +29,8 @@ struct SystemSnapshot {
 }
 
 struct CPUTicks {
-    var user: UInt64, system: UInt64, idle: UInt64, nice: UInt64
+    // The kernel counters are 32-bit and wrap; keep them 32-bit so deltas wrap correctly.
+    var user: UInt32, system: UInt32, idle: UInt32, nice: UInt32
 }
 
 enum SystemStats {
@@ -44,8 +45,8 @@ enum SystemStats {
         }
         guard kr == KERN_SUCCESS else { return nil }
         return CPUTicks(
-            user: UInt64(info.cpu_ticks.0), system: UInt64(info.cpu_ticks.1),
-            idle: UInt64(info.cpu_ticks.2), nice: UInt64(info.cpu_ticks.3))
+            user: info.cpu_ticks.0, system: info.cpu_ticks.1,
+            idle: info.cpu_ticks.2, nice: info.cpu_ticks.3)
     }
 
     /// Returns (total, user, system) as fractions 0...1 between two samples.
@@ -70,7 +71,9 @@ enum SystemStats {
         }
         guard kr == KERN_SUCCESS else { return 0 }
         let page = UInt64(vm_kernel_page_size)
-        let app = UInt64(stats.internal_page_count) &- UInt64(stats.purgeable_count)
+        let internalPages = UInt64(stats.internal_page_count)
+        let purgeable = UInt64(stats.purgeable_count)
+        let app = internalPages > purgeable ? internalPages - purgeable : 0
         return (app + UInt64(stats.wire_count) + UInt64(stats.compressor_page_count)) * page
     }
 
@@ -103,6 +106,7 @@ enum SystemStats {
         let p = Process()
         p.executableURL = URL(fileURLWithPath: "/bin/ps")
         p.arguments = ["-Aceo", "pid=,pcpu=,rss=,comm="]
+        p.environment = ["LC_ALL": "C"]  // keep the decimal point a point
         let pipe = Pipe()
         p.standardOutput = pipe
         p.standardError = FileHandle.nullDevice

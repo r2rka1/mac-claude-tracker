@@ -39,7 +39,11 @@ struct SessionInfo: Identifiable {
 struct TranscriptSummary {
     enum Kind { case toolUse, toolResult, thinking, text, prompt }
     var title: String?
-    var lastPrompt: String?
+    /// From the periodic `last-prompt` record, which can lag behind by a turn or more.
+    var recordedPrompt: String?
+    /// From the newest message the user actually sent, when it is within the parsed tail.
+    var humanPrompt: String?
+    var lastPrompt: String? { humanPrompt ?? recordedPrompt }
     var newest: Kind?
     var tool: String?
     var toolDetail: String?
@@ -180,12 +184,21 @@ final class ClaudeScanner {
         }
         guard let fh = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? fh.close() }
-        let offset = size > UInt64(tail) ? size - UInt64(tail) : 0
-        try? fh.seek(toOffset: offset)
-        guard let data = try? fh.readToEnd() else { return nil }
-        var lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
-        if offset > 0, !lines.isEmpty { lines.removeFirst() }  // partial line
-        let sum = Self.summarize(lines: lines, wantMeta: wantMeta)
+        // A single tool result can be larger than the tail, leaving nothing parseable;
+        // widen once, and if that still fails keep showing the previous summary.
+        var sum = TranscriptSummary()
+        for bytes in [UInt64(tail), UInt64(tail) * 8] {
+            let offset = size > bytes ? size - bytes : 0
+            try? fh.seek(toOffset: offset)
+            guard let data = try? fh.readToEnd() else { return nil }
+            var lines = data.split(separator: 0x0A, omittingEmptySubsequences: true)
+            if offset > 0, !lines.isEmpty { lines.removeFirst() }  // partial line
+            sum = Self.summarize(lines: lines, wantMeta: wantMeta)
+            if sum.newest != nil || offset == 0 { break }
+        }
+        if sum.newest == nil, let previous = cache[url.path] {
+            return (previous.summary, mtime)
+        }
         cache[url.path] = (mtime, size, sum)
         return (sum, mtime)
     }
@@ -197,6 +210,7 @@ final class ClaudeScanner {
 
     static func summarize(lines: [Data], wantMeta: Bool) -> TranscriptSummary {
         var s = TranscriptSummary()
+        var toolSearchClosed = false  // set once the walk passes a prompt: older tools are stale
         for line in lines.reversed() {
             let conv = line.range(of: pAssistant) != nil || line.range(of: pUser) != nil
             let meta =
@@ -211,7 +225,9 @@ final class ClaudeScanner {
             case "ai-title":
                 if s.title == nil { s.title = o["aiTitle"] as? String }
             case "last-prompt":
-                if s.lastPrompt == nil { s.lastPrompt = (o["lastPrompt"] as? String).map(oneLine) }
+                if s.recordedPrompt == nil {
+                    s.recordedPrompt = (o["lastPrompt"] as? String).map { clip(oneLine($0), 300) }
+                }
             case "assistant":
                 guard let m = o["message"] as? J, let content = m["content"] as? [J] else { continue }
                 if s.model == nil { s.model = m["model"] as? String }
@@ -224,7 +240,7 @@ final class ClaudeScanner {
                     switch block["type"] as? String {
                     case "tool_use":
                         if s.newest == nil { s.newest = .toolUse }
-                        if s.tool == nil {
+                        if s.tool == nil, !toolSearchClosed {
                             s.tool = block["name"] as? String
                             s.toolDetail = toolDetail(block["input"] as? J ?? [:])
                         }
@@ -243,27 +259,37 @@ final class ClaudeScanner {
                     }
                 }
             case "user":
-                guard s.newest == nil, let m = o["message"] as? J else { continue }
-                if let blocks = m["content"] as? [J],
-                    blocks.contains(where: { $0["type"] as? String == "tool_result" })
+                guard let m = o["message"] as? J else { continue }
+                if s.humanPrompt == nil, (o["origin"] as? J)?["kind"] as? String == "human",
+                    o["isMeta"] as? Bool != true
                 {
-                    s.newest = .toolResult
-                } else {
-                    s.newest = .prompt
+                    let text =
+                        m["content"] as? String
+                        ?? (m["content"] as? [J])?.compactMap { $0["text"] as? String }
+                            .joined(separator: " ")
+                    if let text, !text.isEmpty { s.humanPrompt = clip(oneLine(text), 300) }
                 }
+                let isToolResult =
+                    (m["content"] as? [J])?.contains { $0["type"] as? String == "tool_result" } ?? false
+                if !isToolResult { toolSearchClosed = true }
+                if s.newest == nil { s.newest = isToolResult ? .toolResult : .prompt }
             default: break
             }
 
             // A tool named after the newest event was a text/prompt is stale; stop looking.
-            let toolSettled = s.tool != nil || s.newest == .text || s.newest == .prompt
+            let toolSettled =
+                s.tool != nil || toolSearchClosed || s.newest == .text || s.newest == .prompt
+                || s.newest == .thinking
             if s.newest != nil, s.lastText != nil, s.contextTokens != nil, toolSettled,
-                !wantMeta || (s.title != nil && s.lastPrompt != nil)
+                !wantMeta || (s.title != nil && s.humanPrompt != nil)
             {
                 break
             }
         }
         // Subagents hand their result back through this tool as their final step.
-        if s.tool == "SubagentHandback" { s.ended = true }
+        if s.tool == "SubagentHandback", s.newest == .toolUse || s.newest == .toolResult {
+            s.ended = true
+        }
         if s.newest == .text || s.newest == .prompt || s.newest == .thinking {
             s.tool = nil
             s.toolDetail = nil

@@ -13,20 +13,51 @@ enum Main {
         }
     }
 
-    /// Renders the panel to a PNG offscreen; used to check layout without screen access.
+    /// Renders the panel to a PNG offscreen. `--demo` uses made-up data (for screenshots that
+    /// are safe to share), `--dark` uses the dark appearance.
     @MainActor static func render(to path: String) {
+        let args = CommandLine.arguments
         let m = Monitor()
-        _ = m.sample()
-        Thread.sleep(forTimeInterval: 0.5)
-        (m.system, m.sessions) = m.sample()
-        m.cpuHistory = (0..<40).map { 0.3 + 0.25 * sin(Double($0) / 4) }
+        if args.contains("--demo") {
+            (m.system, m.sessions) = Demo.sample()
+        } else {
+            _ = m.sample()
+            Thread.sleep(forTimeInterval: 0.5)
+            (m.system, m.sessions) = m.sample()
+        }
+        m.cpuHistory = (0..<60).map { (i: Int) -> Double in
+            let t = Double(i)
+            let slow: Double = 0.14 * sin(t / 5)
+            let fast: Double = 0.08 * sin(t / 1.7)
+            return 0.28 + slow + fast
+        }
+
+        _ = NSApplication.shared
+        let appearance = NSAppearance(named: args.contains("--dark") ? .darkAqua : .aqua)
         let view = DashboardView(inWindow: false).environmentObject(m)
             .background(Color(nsColor: .windowBackgroundColor))
-        let r = ImageRenderer(content: view)
-        r.scale = 2
-        guard let tiff = r.nsImage?.tiffRepresentation,
-            let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:])
+            .clipShape(RoundedRectangle(cornerRadius: 10))
+        let host = NSHostingView(rootView: view)
+        host.appearance = appearance
+        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        let window = NSWindow(
+            contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = appearance
+        window.backgroundColor = .clear
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.4))
+
+        let size = host.bounds.size
+        guard
+            let rep = NSBitmapImageRep(
+                bitmapDataPlanes: nil, pixelsWide: Int(size.width * 2), pixelsHigh: Int(size.height * 2),
+                bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)
         else { return print("render failed") }
+        rep.size = size
+        host.cacheDisplay(in: host.bounds, to: rep)
+        guard let png = rep.representation(using: .png, properties: [:]) else { return print("render failed") }
         try? png.write(to: URL(fileURLWithPath: path))
     }
 

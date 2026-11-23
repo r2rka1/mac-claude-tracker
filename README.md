@@ -2,6 +2,11 @@
 
 A compact macOS menu bar app showing system stats and what the Claude Code sessions on this machine are doing.
 
+<p>
+  <img src="docs/panel-light.png" width="400" alt="Claude Tracker panel, light appearance">
+  <img src="docs/panel-dark.png" width="400" alt="Claude Tracker panel, dark appearance">
+</p>
+
 Menu bar: `C20% M71% ✳1/7` — CPU, memory, busy/total Claude sessions. Click it for the panel:
 
 - **System**: CPU (with a 2-minute sparkline and load average), memory and swap, disk free.
@@ -35,4 +40,11 @@ Transcripts do not store the text of thinking blocks, so the app shows that an a
 ```sh
 ClaudeTracker --dump               # print one sample as text
 ClaudeTracker --render panel.png   # render the panel to an image
+ClaudeTracker --render panel.png --demo [--dark]   # same, with made-up data
 ```
+
+The screenshots above are rendered with `--demo`, so they contain no real session data.
+
+## Privacy
+
+The app only reads local files and runs `ps`. It makes no network requests and writes nothing outside its own window.
