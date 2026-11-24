@@ -6,6 +6,8 @@ enum Main {
         let args = CommandLine.arguments
         if args.contains("--dump") {
             dump()
+        } else if let i = args.firstIndex(of: "--icon"), i + 1 < args.count {
+            Mascot.writeIcon(.tracker, to: args[i + 1])
         } else if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
             render(to: args[i + 1])
         } else {

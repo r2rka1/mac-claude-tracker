@@ -1,3 +1,5 @@
+<img src="docs/icon.png" width="96" align="right" alt="Claude Tracker icon: a violet pixel-art octopus on an activity chart">
+
 # Claude Tracker
 
 A compact macOS menu bar app showing system stats and what the Claude Code sessions on this machine are doing.
@@ -44,6 +46,8 @@ ClaudeTracker --render panel.png --demo [--dark]   # same, with made-up data
 ```
 
 The screenshots above are rendered with `--demo`, so they contain no real session data.
+
+The octopus is pixel art defined in `Sources/ClaudeTracker/Mascot.swift`; `./scripts/make-icon.sh` regenerates the app icon from it.
 
 ## Privacy
 

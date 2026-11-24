@@ -42,6 +42,7 @@ struct DashboardView: View {
 
     private var sessionsHeader: some View {
         HStack {
+            Image(nsImage: Mascot.image(size: 16)).interpolation(.none)
             Text("CLAUDE").font(mono.bold())
             Text("\(monitor.busyCount) busy · \(monitor.sessions.count - monitor.busyCount) idle")
                 .font(mono).foregroundStyle(.secondary)
