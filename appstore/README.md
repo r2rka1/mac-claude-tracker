@@ -36,7 +36,7 @@ Try the sandboxed build on this Mac first: `./scripts/build-appstore.sh --local 
 ## Listing
 
 - **Name:** Claude Tracker
-- **Subtitle:** Claude Code sessions at a glance
+- **Subtitle:** Claude Code session monitor
 - **Category:** Developer Tools
 - **Price:** Free
 - **Age rating:** 4+
