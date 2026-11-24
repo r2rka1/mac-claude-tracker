@@ -9,6 +9,8 @@ A compact macOS menu bar app showing system stats and what the Claude Code sessi
   <img src="docs/panel-dark.png" width="400" alt="Claude Tracker panel, dark appearance">
 </p>
 
+**[Website](https://r2rka1.github.io/mac-claude-tracker/)** · [Privacy](https://r2rka1.github.io/mac-claude-tracker/privacy.html)
+
 Menu bar: `C20% M71% ✳1/7` — CPU, memory, busy/total Claude sessions. Click it for the panel:
 
 - **System**: CPU (with a 2-minute sparkline and load average), memory and swap, disk free.
@@ -27,6 +29,14 @@ Requires Xcode command line tools (Swift 5.9+) and macOS 14+.
 
 Without `--install` it only builds `build/ClaudeTracker.app`.
 
+## Mac App Store edition
+
+```sh
+./scripts/build-appstore.sh --local   # sandboxed build, to try on this Mac
+```
+
+The sandboxed edition asks once for read access to `~/.claude`, and has no top-process lists or per-session CPU, because the App Sandbox hides other processes' usage. The listing text, screenshots and submission steps are in [appstore/](appstore/README.md).
+
 ## How it reads Claude sessions
 
 Read-only, from `~/.claude`:
@@ -43,6 +53,7 @@ Transcripts do not store the text of thinking blocks, so the app shows that an a
 ClaudeTracker --dump               # print one sample as text
 ClaudeTracker --render panel.png   # render the panel to an image
 ClaudeTracker --render panel.png --demo [--dark]   # same, with made-up data
+ClaudeTracker --render-store dir   # App Store screenshots, made-up data
 ```
 
 The screenshots above are rendered with `--demo`, so they contain no real session data.
@@ -52,6 +63,8 @@ The octopus is pixel art defined in `Sources/ClaudeTracker/Mascot.swift`; `./scr
 ## Privacy
 
 The app only reads local files and runs `ps`. It makes no network requests and writes nothing outside its own window.
+
+Claude Tracker is an independent project, not affiliated with Anthropic.
 
 ## License
 

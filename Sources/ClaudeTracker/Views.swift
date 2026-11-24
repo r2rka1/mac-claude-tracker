@@ -5,7 +5,23 @@ private let mono = Font.system(size: 11, design: .monospaced)
 private let monoSmall = Font.system(size: 10, design: .monospaced)
 
 private func level(_ f: Double) -> Color {
-    f >= 0.9 ? .red : f >= 0.75 ? .orange : .green
+    f >= 0.9 ? .red : f >= 0.75 ? .orange : Mascot.tint
+}
+
+private let lavender = Color(nsColor: Mascot.rgb(0xA78BFA))
+
+/// A section title in the brand colour.
+private func label(_ text: String) -> some View {
+    Text(text).font(monoSmall.bold()).foregroundStyle(lavender)
+}
+
+private extension View {
+    /// The rounded panel each section sits on.
+    func card() -> some View {
+        padding(8)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.055)))
+    }
 }
 
 struct DashboardView: View {
@@ -15,21 +31,24 @@ struct DashboardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            SystemSection(s: monitor.system, history: monitor.cpuHistory)
-            Divider()
-            ProcessSection(s: monitor.system)
-            Divider()
-            sessionsHeader
-            if inWindow {
-                ScrollView { SessionList(sessions: monitor.sessions) }
-            } else {
-                ViewThatFits(in: .vertical) {
-                    SessionList(sessions: monitor.sessions)
+            header
+            SystemSection(s: monitor.system, history: monitor.cpuHistory).card()
+            if monitor.system.procDetail { ProcessSection(s: monitor.system).card() }
+            VStack(alignment: .leading, spacing: 8) {
+                sessionsHeader
+                if monitor.needsAccess {
+                    AccessPrompt { monitor.requestAccess() }
+                } else if inWindow {
                     ScrollView { SessionList(sessions: monitor.sessions) }
+                } else {
+                    ViewThatFits(in: .vertical) {
+                        SessionList(sessions: monitor.sessions)
+                        ScrollView { SessionList(sessions: monitor.sessions) }
+                    }
+                    .frame(maxHeight: 440)
                 }
-                .frame(maxHeight: 440)
             }
-            Divider()
+            .card()
             Footer(inWindow: inWindow) {
                 openWindow(id: "main")
                 NSApp.activate(ignoringOtherApps: true)
@@ -40,16 +59,25 @@ struct DashboardView: View {
         .frame(minWidth: inWindow ? 420 : nil, maxHeight: inWindow ? .infinity : nil, alignment: .top)
     }
 
+    private var header: some View {
+        HStack(spacing: 6) {
+            Image(nsImage: Mascot.image(size: 18)).interpolation(.none)
+            Text("Claude Tracker").font(.system(size: 13, weight: .bold, design: .rounded))
+            Spacer()
+            Text("\(monitor.system.procCount) processes").font(monoSmall).foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 2)
+    }
+
     private var sessionsHeader: some View {
         HStack {
-            Image(nsImage: Mascot.image(size: 16)).interpolation(.none)
-            Text("CLAUDE").font(mono.bold())
+            label("SESSIONS")
             Text("\(monitor.busyCount) busy · \(monitor.sessions.count - monitor.busyCount) idle")
                 .font(mono).foregroundStyle(.secondary)
             Spacer()
             let agents = monitor.sessions.reduce(0) { $0 + $1.subagents.count }
             if agents > 0 {
-                Text("\(agents) subagent\(agents == 1 ? "" : "s")").font(mono).foregroundStyle(.orange)
+                Text("\(agents) subagent\(agents == 1 ? "" : "s")").font(mono).foregroundStyle(lavender)
             }
         }
     }
@@ -81,7 +109,7 @@ private struct SystemSection: View {
         -> some View
     {
         HStack(spacing: 6) {
-            Text(label).font(mono.bold()).frame(width: 28, alignment: .leading)
+            Text(label).font(mono.bold()).foregroundStyle(lavender).frame(width: 28, alignment: .leading)
             Text(Fmt.pct(value)).font(mono).frame(width: 34, alignment: .trailing)
             Bar(value: value).frame(width: 110)
             Spacer(minLength: 4)
@@ -120,7 +148,7 @@ private struct Sparkline: View {
                     if i == 0 { p.move(to: pt) } else { p.addLine(to: pt) }
                 }
             }
-            .stroke(Color.accentColor, lineWidth: 1)
+            .stroke(lavender, lineWidth: 1.2)
         }
     }
 }
@@ -131,7 +159,7 @@ private struct ProcessSection: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             column("TOP CPU", s.topCPU) { String(format: "%.0f%%", $0.cpu) }
-            column("TOP MEM · \(s.procCount) procs", s.topMem) { Fmt.bytes($0.rssBytes) }
+            column("TOP MEM", s.topMem) { Fmt.bytes($0.rssBytes) }
         }
     }
 
@@ -139,7 +167,7 @@ private struct ProcessSection: View {
         -> some View
     {
         VStack(alignment: .leading, spacing: 1) {
-            Text(title).font(monoSmall.bold()).foregroundStyle(.secondary)
+            label(title)
             ForEach(procs) { p in
                 HStack(spacing: 4) {
                     Text(p.name).lineLimit(1).truncationMode(.middle)
@@ -184,7 +212,9 @@ private struct SessionRow: View {
                 Text(meta).font(monoSmall).foregroundStyle(.secondary).lineLimit(1)
                     .layoutPriority(1)
             }
-            .help("\(s.name) · pid \(s.pid) · \(s.cwd)\n\(s.model ?? "") · \(Fmt.bytes(s.rssBytes)) RAM")
+            .help(
+                "\(s.name) · pid \(s.pid) · \(s.cwd)\n\(s.model ?? "")"
+                    + (s.rssBytes > 0 ? " · \(Fmt.bytes(s.rssBytes)) RAM" : ""))
 
             if s.isBusy, let a = s.activity {
                 Text(a).font(monoSmall).foregroundStyle(.green).lineLimit(1).padding(.leading, 12)
@@ -200,7 +230,7 @@ private struct SessionRow: View {
             ForEach(s.subagents) { a in
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 4) {
-                        Text("↳ \(a.type)").foregroundStyle(.orange)
+                        Text("↳ \(a.type)").foregroundStyle(lavender)
                         Text(a.description).lineLimit(1)
                         Spacer(minLength: 4)
                         Text(Fmt.age(a.lastActive)).foregroundStyle(.secondary)
@@ -222,6 +252,19 @@ private struct SessionRow: View {
         if s.cpu >= 1 { parts.append(String(format: "%.0f%%", s.cpu)) }
         parts.append(Fmt.age(s.lastActive))
         return parts.joined(separator: " · ")
+    }
+}
+
+/// Shown by the App Store build until it may read the .claude folder.
+private struct AccessPrompt: View {
+    let grant: () -> Void
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("To show your Claude Code sessions, allow read access to the .claude folder in your home folder.")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Allow access to .claude…", action: grant).controlSize(.small)
+        }
     }
 }
 

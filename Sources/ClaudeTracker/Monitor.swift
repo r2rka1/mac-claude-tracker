@@ -6,6 +6,8 @@ final class Monitor: ObservableObject {
     @Published var sessions: [SessionInfo] = []
     @Published var cpuHistory: [Double] = []
     @Published var updatedAt = Date()
+    /// True when the sandboxed build has not been given the .claude folder yet.
+    @Published var needsAccess = ClaudeFolder.shared.root == nil
 
     static let interval: TimeInterval = 2
     private let queue = DispatchQueue(label: "claudetracker.monitor", qos: .utility)
@@ -42,8 +44,10 @@ final class Monitor: ObservableObject {
         snap.swapUsed = SystemStats.swapUsed()
         (snap.diskFree, snap.diskTotal) = SystemStats.disk()
 
-        let procs = SystemStats.processes()
+        snap.procDetail = !Sandbox.active
+        let procs = Sandbox.active ? SystemStats.processNames() : SystemStats.processes()
         snap.procCount = procs.count
+        guard snap.procDetail else { return (snap, scanner.scan()) }
         snap.topCPU = Array(procs.sorted { $0.cpu > $1.cpu }.prefix(6))
         snap.topMem = Array(procs.sorted { $0.rssBytes > $1.rssBytes }.prefix(6))
 
@@ -58,6 +62,10 @@ final class Monitor: ObservableObject {
         return (snap, sessions)
     }
 
+    @MainActor func requestAccess() {
+        if ClaudeFolder.shared.requestAccess() { needsAccess = false }
+    }
+
     private func tick() {
         let (snap, sessions) = sample()
         DispatchQueue.main.async {
@@ -66,6 +74,8 @@ final class Monitor: ObservableObject {
             self.cpuHistory.append(snap.cpu)
             if self.cpuHistory.count > 60 { self.cpuHistory.removeFirst(self.cpuHistory.count - 60) }
             self.updatedAt = Date()
+            let needs = ClaudeFolder.shared.root == nil
+            if self.needsAccess != needs { self.needsAccess = needs }
         }
     }
 }

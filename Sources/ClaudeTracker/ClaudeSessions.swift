@@ -66,7 +66,7 @@ struct TranscriptSummary {
 }
 
 final class ClaudeScanner {
-    private let root = URL(fileURLWithPath: NSHomeDirectory()).appendingPathComponent(".claude")
+    private var root = URL(fileURLWithPath: "/nonexistent")
     private let fm = FileManager.default
     private var transcriptPaths: [String: URL] = [:]
     private var cache: [String: (mtime: Date, size: UInt64, summary: TranscriptSummary)] = [:]
@@ -77,6 +77,8 @@ final class ClaudeScanner {
         ProcessInfo.processInfo.environment["CLAUDETRACKER_SUBAGENT_WINDOW"].flatMap(Double.init) ?? 15 * 60
 
     func scan() -> [SessionInfo] {
+        guard let folder = ClaudeFolder.shared.root else { return [] }
+        root = folder
         let dir = root.appendingPathComponent("sessions")
         guard let files = try? fm.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
         else { return [] }
@@ -120,7 +122,11 @@ final class ClaudeScanner {
     }
 
     private func isAlive(_ pid: Int) -> Bool {
-        kill(pid_t(pid), 0) == 0 || errno == EPERM
+        // sysctl rather than kill(pid, 0): the sandbox refuses signals to other processes.
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, Int32(pid)]
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        return sysctl(&mib, 4, &info, &size, nil, 0) == 0 && size > 0
     }
 
     private func transcriptPath(for sessionId: String) -> URL? {

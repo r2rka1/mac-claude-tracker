@@ -8,6 +8,8 @@ enum Main {
             dump()
         } else if let i = args.firstIndex(of: "--icon"), i + 1 < args.count {
             Mascot.writeIcon(.tracker, to: args[i + 1])
+        } else if let i = args.firstIndex(of: "--render-store"), i + 1 < args.count {
+            StoreShots.render(into: args[i + 1])
         } else if let i = args.firstIndex(of: "--render"), i + 1 < args.count {
             render(to: args[i + 1])
         } else {
@@ -15,12 +17,10 @@ enum Main {
         }
     }
 
-    /// Renders the panel to a PNG offscreen. `--demo` uses made-up data (for screenshots that
-    /// are safe to share), `--dark` uses the dark appearance.
-    @MainActor static func render(to path: String) {
-        let args = CommandLine.arguments
+    /// A monitor filled for rendering: made-up data with `--demo`, a live sample otherwise.
+    @MainActor static func renderMonitor(demo: Bool, store: Bool) -> Monitor {
         let m = Monitor()
-        if args.contains("--demo") {
+        if demo {
             (m.system, m.sessions) = Demo.sample()
         } else {
             _ = m.sample()
@@ -33,15 +33,29 @@ enum Main {
             let fast: Double = 0.08 * sin(t / 1.7)
             return 0.28 + slow + fast
         }
+        m.needsAccess = false
+        if store { m.system.procDetail = false }  // the App Store build has no process lists
+        return m
+    }
 
-        _ = NSApplication.shared
-        let appearance = NSAppearance(named: args.contains("--dark") ? .darkAqua : .aqua)
-        let view = DashboardView(inWindow: false).environmentObject(m)
+    /// Renders the panel to a PNG offscreen. `--demo` uses made-up data (for screenshots that
+    /// are safe to share), `--dark` uses the dark appearance, `--store` shows the App Store build.
+    @MainActor static func render(to path: String) {
+        let args = CommandLine.arguments
+        let m = renderMonitor(demo: args.contains("--demo"), store: args.contains("--store"))
+        let view = DashboardView(inWindow: false).environmentObject(m).tint(Mascot.tint)
             .background(Color(nsColor: .windowBackgroundColor))
             .clipShape(RoundedRectangle(cornerRadius: 10))
+        png(of: view, size: nil, dark: args.contains("--dark"), to: path)
+    }
+
+    /// Draws a SwiftUI view offscreen at 2x. A nil size means the view's own fitting size.
+    @MainActor static func png(of view: some View, size: CGSize?, dark: Bool, to path: String) {
+        _ = NSApplication.shared
+        let appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         let host = NSHostingView(rootView: view)
         host.appearance = appearance
-        host.frame = NSRect(origin: .zero, size: host.fittingSize)
+        host.frame = NSRect(origin: .zero, size: size ?? host.fittingSize)
         let window = NSWindow(
             contentRect: host.frame, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = appearance
@@ -94,14 +108,14 @@ struct ClaudeTrackerApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            DashboardView(inWindow: false).environmentObject(monitor)
+            DashboardView(inWindow: false).environmentObject(monitor).tint(Mascot.tint)
         } label: {
             Text(monitor.menuTitle)
         }
         .menuBarExtraStyle(.window)
 
         Window("Claude Tracker", id: "main") {
-            DashboardView(inWindow: true).environmentObject(monitor)
+            DashboardView(inWindow: true).environmentObject(monitor).tint(Mascot.tint)
         }
         .defaultSize(width: 480, height: 720)
     }

@@ -21,6 +21,8 @@ struct SystemSnapshot {
     var diskFree: UInt64 = 0
     var diskTotal: UInt64 = 0
     var procCount: Int = 0
+    /// False in the App Store build: the sandbox hides per-process CPU and memory.
+    var procDetail = true
     var topCPU: [ProcInfo] = []
     var topMem: [ProcInfo] = []
 
@@ -100,6 +102,22 @@ enum SystemStats {
         var l = [Double](repeating: 0, count: 3)
         getloadavg(&l, 3)
         return l
+    }
+
+    /// Names and pids only, from sysctl. This is all the App Sandbox allows.
+    static func processNames() -> [ProcInfo] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
+        var size = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0 else { return [] }
+        var buf = [kinfo_proc](repeating: kinfo_proc(), count: size / MemoryLayout<kinfo_proc>.stride + 64)
+        size = buf.count * MemoryLayout<kinfo_proc>.stride
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return [] }
+        return buf.prefix(size / MemoryLayout<kinfo_proc>.stride).map { kp in
+            let name = withUnsafeBytes(of: kp.kp_proc.p_comm) { raw in
+                String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self)
+            }
+            return ProcInfo(pid: Int(kp.kp_proc.p_pid), cpu: 0, rssBytes: 0, name: name)
+        }
     }
 
     static func processes() -> [ProcInfo] {
